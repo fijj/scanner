@@ -17,7 +17,10 @@
     display: flex;
     flex-direction: column;
     min-height: 100vh;
+    min-height: 100dvh;   /* 100vh на Android не учитывает адресную строку */
     padding: 12px;
+    /* место под фиксированную кнопку внизу */
+    padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
   }
   header {
     display: flex;
@@ -28,9 +31,17 @@
   }
   h1 { font-size: 20px; margin: 0; }
   #counter { font-size: 16px; color: #aaa; }
+  /* Все кнопки — div'ы с role="button". Обычный <button> при тапе забирает
+     фокус у поля-приёмника, из-за чего Android поднимает экранную
+     клавиатуру. Неfокусируемый элемент такого не делает. */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    text-align: center; cursor: pointer; user-select: none;
+  }
   #diag-btn {
-    background: #333941; color: #9aa0a8; border: none;
+    background: #333941; color: #9aa0a8;
     border-radius: 8px; padding: 8px 10px; font-size: 12px;
+    flex: none;
   }
 
   #status-banner {
@@ -86,15 +97,20 @@
   .item .barcode { font-size: 13px; color: #9aa0a8; margin-top: 4px; }
   .item .mark { font-size: 28px; width: 40px; text-align: center; }
 
+  /* Всегда прижата к низу видимой области, независимо от адресной строки */
   #reset-btn {
-    margin-top: 16px;
-    padding: 16px;
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    z-index: 20;
+    padding: 18px;
     font-size: 18px;
     font-weight: bold;
-    border: none;
     border-radius: 12px;
     background: #7a2222;
     color: #fff;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .5);
   }
   #reset-btn:active { background: #591616; }
 
@@ -107,8 +123,8 @@
   #diag.open { display: block; }
   #diag h2 { font-size: 14px; margin: 0 0 8px; color: #9aa0a8; }
   #diag .row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-  #diag button {
-    background: #333941; color: #ddd; border: none;
+  #diag .btn {
+    background: #333941; color: #ddd;
     border-radius: 8px; padding: 10px 12px; font-size: 13px;
   }
   #log {
@@ -136,23 +152,23 @@
     <h1>Сборка заказа</h1>
     <div id="focus-dot" title="готов к сканированию"></div>
     <div id="counter">0 / 2</div>
-    <button id="diag-btn">диагностика</button>
+    <div class="btn" id="diag-btn" role="button">диагностика</div>
   </header>
 
   <div id="status-banner">Отсканируйте товар</div>
 
   <div id="list"></div>
 
-  <button id="reset-btn">Сбросить собранные</button>
+  <div class="btn" id="reset-btn" role="button">Сбросить собранные</div>
 
   <div id="diag">
     <h2>Диагностика сканера</h2>
     <div class="row">
-      <button id="test-ok">Тест звука OK</button>
-      <button id="test-err">Тест звука ОШИБКА</button>
-      <button id="test-scan">Тест скана DA103SHS</button>
-      <button id="rebind-btn">Пересобрать ввод</button>
-      <button id="clear-log">Очистить лог</button>
+      <div class="btn" id="test-ok" role="button">Тест звука OK</div>
+      <div class="btn" id="test-err" role="button">Тест звука ОШИБКА</div>
+      <div class="btn" id="test-scan" role="button">Тест скана DA103SHS</div>
+      <div class="btn" id="rebind-btn" role="button">Пересобрать ввод</div>
+      <div class="btn" id="clear-log" role="button">Очистить лог</div>
     </div>
     <div id="log"></div>
     <div id="hint">
@@ -453,8 +469,12 @@
      срабатывает blur -> focus() уже внутри жеста пользователя, и Android
      на это открывает экранную клавиатуру. Отменяем фокусировку кнопок:
      click при этом продолжает работать. */
+  function isBtn(el) {
+    return !!(el && el.closest && el.closest('.btn'));
+  }
+
   function keepFocus(e) {
-    if (e.target && e.target.tagName === 'BUTTON') e.preventDefault();
+    if (isBtn(e.target)) e.preventDefault();
   }
   document.addEventListener('pointerdown', keepFocus, true);
   document.addEventListener('mousedown',   keepFocus, true);
@@ -502,7 +522,7 @@
   }, 500);
 
   function refocusIfNotButton(e) {
-    if (e.target && e.target.tagName === 'BUTTON') return;
+    if (isBtn(e.target)) return;
     setTimeout(focusInput, 30);
   }
   document.addEventListener('touchstart', refocusIfNotButton);
