@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Сборка заказа</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: #1c1f24;
+    color: #eee;
+    user-select: none;
+  }
+  #app {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    padding: 12px;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  h1 {
+    font-size: 20px;
+    margin: 0;
+  }
+  #counter {
+    font-size: 16px;
+    color: #aaa;
+  }
+  #status-banner {
+    min-height: 56px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: bold;
+    text-align: center;
+    padding: 8px;
+    margin-bottom: 12px;
+    background: #2a2e35;
+    color: #888;
+    transition: background 0.15s, color 0.15s;
+  }
+  #status-banner.ok { background: #1e5c33; color: #b7ffcf; }
+  #status-banner.err { background: #6b1f1f; color: #ffd0d0; }
+
+  #list {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .item {
+    border: 2px solid #3a3f47;
+    border-radius: 12px;
+    padding: 14px 16px;
+    background: #262a31;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .item.collected {
+    background: #1e5c33;
+    border-color: #35c168;
+  }
+  .item .info .name {
+    font-size: 20px;
+    font-weight: bold;
+  }
+  .item .info .barcode {
+    font-size: 13px;
+    color: #9aa0a8;
+    margin-top: 4px;
+  }
+  .item .mark {
+    font-size: 28px;
+    width: 40px;
+    text-align: center;
+  }
+
+  #reset-btn {
+    margin-top: 16px;
+    padding: 16px;
+    font-size: 18px;
+    font-weight: bold;
+    border: none;
+    border-radius: 12px;
+    background: #7a2222;
+    color: #fff;
+    cursor: pointer;
+  }
+  #reset-btn:active { background: #591616; }
+
+  #scan-input {
+    position: fixed;
+    top: -100px;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Сборка заказа</h1>
+    <div id="counter">0 / 2</div>
+  </header>
+
+  <div id="status-banner">Отсканируйте товар</div>
+
+  <div id="list"></div>
+
+  <button id="reset-btn">Сбросить собранные</button>
+</div>
+
+<input id="scan-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+
+<script>
+(function () {
+  const PRODUCTS = [
+    { name: 'DA103SHS', barcode: '2000000277523', collected: false },
+    { name: 'DA102SHS', barcode: '2000000277417', collected: false },
+  ];
+
+  const STORAGE_KEY = 'scan-app-state-v1';
+
+  const listEl = document.getElementById('list');
+  const counterEl = document.getElementById('counter');
+  const bannerEl = document.getElementById('status-banner');
+  const resetBtn = document.getElementById('reset-btn');
+  const scanInput = document.getElementById('scan-input');
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      PRODUCTS.forEach(p => { if (saved[p.barcode]) p.collected = true; });
+    } catch (e) {}
+  }
+
+  function saveState() {
+    const map = {};
+    PRODUCTS.forEach(p => { map[p.barcode] = p.collected; });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+  }
+
+  function render() {
+    listEl.innerHTML = '';
+    let collectedCount = 0;
+    PRODUCTS.forEach(p => {
+      if (p.collected) collectedCount++;
+      const item = document.createElement('div');
+      item.className = 'item' + (p.collected ? ' collected' : '');
+      item.innerHTML =
+        '<div class="info">' +
+          '<div class="name">' + p.name + '</div>' +
+          '<div class="barcode">' + p.barcode + '</div>' +
+        '</div>' +
+        '<div class="mark">' + (p.collected ? '✓' : '') + '</div>';
+      listEl.appendChild(item);
+    });
+    counterEl.textContent = collectedCount + ' / ' + PRODUCTS.length;
+  }
+
+  // --- Звук через Web Audio API ---
+  let audioCtx = null;
+  function getAudioCtx() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  function beep(freq, duration, type) {
+    try {
+      const ctx = getAudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration);
+    } catch (e) {}
+  }
+
+  function playSuccess() {
+    beep(1046, 0.12, 'sine');
+  }
+
+  function playError() {
+    beep(220, 0.18, 'square');
+    setTimeout(() => beep(180, 0.22, 'square'), 150);
+  }
+
+  function showBanner(text, kind) {
+    bannerEl.textContent = text;
+    bannerEl.className = kind ? kind : '';
+  }
+
+  // --- Обработка скана ---
+  function handleScan(code) {
+    code = (code || '').trim();
+    if (!code) return;
+
+    const product = PRODUCTS.find(p => p.barcode === code);
+
+    if (!product) {
+      playError();
+      showBanner('Неизвестный штрихкод: ' + code, 'err');
+      return;
+    }
+
+    if (product.collected) {
+      playError();
+      showBanner('Перебор! ' + product.name + ' уже собран', 'err');
+      return;
+    }
+
+    product.collected = true;
+    saveState();
+    render();
+    playSuccess();
+    showBanner('Собран: ' + product.name, 'ok');
+  }
+
+  // --- Захват ввода со сканера (эмуляция клавиатуры) ---
+  function focusInput() {
+    scanInput.focus();
+  }
+
+  scanInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      const value = scanInput.value;
+      scanInput.value = '';
+      handleScan(value);
+    }
+  });
+
+  // На случай, если сканер не шлёт Enter — срабатывание по паузе после ввода
+  let inputTimer = null;
+  scanInput.addEventListener('input', function () {
+    clearTimeout(inputTimer);
+    inputTimer = setTimeout(function () {
+      const value = scanInput.value;
+      if (value) {
+        scanInput.value = '';
+        handleScan(value);
+      }
+    }, 300);
+  });
+
+  scanInput.addEventListener('blur', function () {
+    setTimeout(focusInput, 50);
+  });
+
+  document.addEventListener('click', focusInput);
+  document.addEventListener('touchstart', focusInput);
+
+  resetBtn.addEventListener('click', function () {
+    PRODUCTS.forEach(p => { p.collected = false; });
+    saveState();
+    render();
+    showBanner('Список сброшен', '');
+    focusInput();
+  });
+
+  // --- Инициализация ---
+  loadState();
+  render();
+  focusInput();
+  setInterval(focusInput, 1000);
+})();
+</script>
+</body>
+</html>
