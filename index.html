@@ -5,67 +5,167 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Сборка заказа</title>
 <style>
+  :root {
+    --bg: #1c1f24;
+    --surface: #262a31;
+    --surface-alt: #2a2e35;
+    --border: #3a3f47;
+    --text: #eceff2;
+    --muted: #9aa0a8;
+    --ok-bg: #1e5c33;
+    --ok-border: #35c168;
+    --ok-text: #b7ffcf;
+    --err-bg: #6b1f1f;
+    --err-text: #ffd0d0;
+    --danger: #7a2222;
+    --danger-active: #591616;
+  }
+
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
   html, body {
-    margin: 0; padding: 0; min-height: 100%;
-    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    background: #1c1f24;
-    color: #eee;
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.4 -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
     user-select: none;
   }
+
+  [v-cloak] { display: none; }
+
   #app {
     display: flex;
     flex-direction: column;
     min-height: 100vh;
-    min-height: 100dvh;   /* 100vh на Android не учитывает адресную строку */
+    min-height: 100dvh;            /* 100vh на Android не учитывает адресную строку */
     padding: 12px;
-    /* место под фиксированную кнопку внизу */
-    padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
-  }
-  header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-    gap: 8px;
-  }
-  h1 { font-size: 20px; margin: 0; }
-  #counter { font-size: 16px; color: #aaa; }
-  /* Все кнопки — div'ы с role="button". Обычный <button> при тапе забирает
-     фокус у поля-приёмника, из-за чего Android поднимает экранную
-     клавиатуру. Неfокусируемый элемент такого не делает. */
-  .btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    text-align: center; cursor: pointer; user-select: none;
-  }
-  #diag-btn {
-    background: #333941; color: #9aa0a8;
-    border-radius: 8px; padding: 8px 10px; font-size: 12px;
-    flex: none;
+    padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
   }
 
-  #status-banner {
-    min-height: 60px;
-    border-radius: 10px;
+  /* Кнопки намеренно свёрстаны на <div role="button">: нативный <button>
+     при тапе забирает фокус у поля-приёмника, из-за чего Android
+     поднимает экранную клавиатуру. Нефокусируемый элемент этого не делает. */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .btn-ghost {
+    padding: 9px 12px;
+    font-size: 13px;
+    background: #333941;
+    color: #ddd;
+  }
+  .btn-ghost:active { background: #434b55; }
+
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .title { flex: 1; margin: 0; font-size: 20px; }
+  .counter { font-size: 16px; color: var(--muted); }
+  .focus-dot {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--err-bg);
+    transition: background .15s;
+  }
+  .focus-dot.live { background: var(--ok-border); }
+
+  .banner {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 18px;
-    font-weight: bold;
-    text-align: center;
-    padding: 8px;
+    min-height: 62px;
     margin-bottom: 10px;
-    background: #2a2e35;
-    color: #888;
+    padding: 8px;
+    border-radius: 10px;
+    background: var(--surface-alt);
+    color: #8b9099;
+    font-size: 18px;
+    font-weight: 700;
+    text-align: center;
+    white-space: pre-line;
     transition: background .12s, color .12s;
   }
-  #status-banner.ok  { background: #1e5c33; color: #b7ffcf; }
-  #status-banner.err { background: #6b1f1f; color: #ffd0d0; }
+  .banner.ok  { background: var(--ok-bg);  color: var(--ok-text); }
+  .banner.err { background: var(--err-bg); color: var(--err-text); }
 
-  /* Скрытое поле-приёмник. НЕ делать его видимым и НЕ ставить
-     inputmode="none" — Urovo отдаёт символы через IME, и оба этих
-     изменения рвут ввод со сканера. */
-  #scan-input {
+  .list {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    transition: background .2s, border-color .2s;
+  }
+  .item.collected { background: var(--ok-bg); border-color: var(--ok-border); }
+  .item-sku { font-size: 20px; font-weight: 700; }
+  .item-barcode { margin-top: 4px; font-size: 13px; color: var(--muted); }
+  .item-mark { width: 40px; font-size: 28px; text-align: center; }
+
+  /* Прижата к низу видимой области независимо от адресной строки браузера */
+  .btn-reset {
+    position: fixed;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    left: 12px;
+    z-index: 20;
+    padding: 18px;
+    background: var(--danger);
+    color: #fff;
+    border-radius: 12px;
+    font-size: 18px;
+    font-weight: 700;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .5);
+  }
+  .btn-reset:active { background: var(--danger-active); }
+
+  .diag { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .diag-title { margin: 0 0 8px; font-size: 14px; color: var(--muted); }
+  .diag-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+
+  .log {
+    max-height: 200px;
+    margin: 0;
+    padding: 8px;
+    overflow-y: auto;
+    border-radius: 8px;
+    background: #101317;
+    color: #8fb4c9;
+    font: 11px/1.5 Consolas, monospace;
+    list-style: none;
+    word-break: break-all;
+    user-select: text;
+  }
+  .log-empty { color: #5a626b; }
+  .log-time { color: #5f7d8f; }
+
+  .hint { margin: 10px 0 0; font-size: 12px; color: #7d848d; }
+
+  /* Поле-приёмник ввода со сканера. Не делать его видимым и не задавать
+     inputmode="none" — Urovo отдаёт символы через IME, и любое из этих
+     изменений разрывает приём. */
+  .scan-field {
     position: fixed;
     top: -100px;
     left: 0;
@@ -74,505 +174,67 @@
     opacity: 0;
     pointer-events: none;
   }
-  #focus-dot {
-    width: 12px; height: 12px; border-radius: 50%;
-    background: #6b1f1f; flex: none;
-    transition: background .15s;
-  }
-  #focus-dot.on { background: #35c168; }
-
-  #list { flex: 1; display: flex; flex-direction: column; gap: 10px; }
-  .item {
-    border: 2px solid #3a3f47;
-    border-radius: 12px;
-    padding: 14px 16px;
-    background: #262a31;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    transition: background .2s, border-color .2s;
-  }
-  .item.collected { background: #1e5c33; border-color: #35c168; }
-  .item .name { font-size: 20px; font-weight: bold; }
-  .item .barcode { font-size: 13px; color: #9aa0a8; margin-top: 4px; }
-  .item .mark { font-size: 28px; width: 40px; text-align: center; }
-
-  /* Всегда прижата к низу видимой области, независимо от адресной строки */
-  #reset-btn {
-    position: fixed;
-    left: 12px;
-    right: 12px;
-    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-    z-index: 20;
-    padding: 18px;
-    font-size: 18px;
-    font-weight: bold;
-    border-radius: 12px;
-    background: #7a2222;
-    color: #fff;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, .5);
-  }
-  #reset-btn:active { background: #591616; }
-
-  #diag {
-    display: none;
-    margin-top: 14px;
-    border-top: 1px solid #3a3f47;
-    padding-top: 12px;
-  }
-  #diag.open { display: block; }
-  #diag h2 { font-size: 14px; margin: 0 0 8px; color: #9aa0a8; }
-  #diag .row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-  #diag .btn {
-    background: #333941; color: #ddd;
-    border-radius: 8px; padding: 10px 12px; font-size: 13px;
-  }
-  #log {
-    background: #101317;
-    border-radius: 8px;
-    padding: 8px;
-    font-family: Consolas, monospace;
-    font-size: 11px;
-    line-height: 1.45;
-    color: #8fb4c9;
-    max-height: 200px;
-    overflow-y: auto;
-    white-space: pre-wrap;
-    word-break: break-all;
-    user-select: text;
-  }
-  #hint {
-    margin-top: 10px; font-size: 12px; color: #7d848d; line-height: 1.5;
-  }
 </style>
 </head>
 <body>
-<div id="app">
-  <header>
-    <h1>Сборка заказа</h1>
-    <div id="focus-dot" title="готов к сканированию"></div>
-    <div id="counter">0 / 2</div>
-    <div class="btn" id="diag-btn" role="button">диагностика</div>
+
+<div id="app" v-cloak>
+  <header class="header">
+    <h1 class="title">Сборка заказа</h1>
+    <span class="focus-dot" :class="{ live: focused }"
+          :title="focused ? 'Готов к сканированию' : 'Ввод не активен'"></span>
+    <span class="counter">{{ collectedCount }} / {{ items.length }}</span>
+    <span class="btn btn-ghost" role="button" @click="diagOpen = !diagOpen">диагностика</span>
   </header>
 
-  <div id="status-banner">Отсканируйте товар</div>
+  <div class="banner" :class="status.kind" @click="reconnect">{{ status.text }}</div>
 
-  <div id="list"></div>
+  <ul class="list">
+    <li v-for="item in items" :key="item.barcode"
+        class="item" :class="{ collected: item.collected }">
+      <div>
+        <div class="item-sku">{{ item.sku }}</div>
+        <div class="item-barcode">{{ item.barcode }}</div>
+      </div>
+      <div class="item-mark">{{ item.collected ? '✓' : '' }}</div>
+    </li>
+  </ul>
 
-  <div class="btn" id="reset-btn" role="button">Сбросить собранные</div>
+  <section v-if="diagOpen" class="diag">
+    <h2 class="diag-title">Диагностика сканера</h2>
 
-  <div id="diag">
-    <h2>Диагностика сканера</h2>
-    <div class="row">
-      <div class="btn" id="test-ok" role="button">Тест звука OK</div>
-      <div class="btn" id="test-err" role="button">Тест звука ОШИБКА</div>
-      <div class="btn" id="test-scan" role="button">Тест скана DA103SHS</div>
-      <div class="btn" id="rebind-btn" role="button">Пересобрать ввод</div>
-      <div class="btn" id="clear-log" role="button">Очистить лог</div>
+    <div class="diag-row">
+      <span class="btn btn-ghost" role="button" @click="testSuccess">Звук OK</span>
+      <span class="btn btn-ghost" role="button" @click="testError">Звук ошибки</span>
+      <span class="btn btn-ghost" role="button" @click="testScan">Тест скана</span>
+      <span class="btn btn-ghost" role="button" @click="reconnect">Пересобрать ввод</span>
+      <span class="btn btn-ghost" role="button" @click="clearLog">Очистить лог</span>
     </div>
-    <div id="log"></div>
-    <div id="hint">
-      Если при нажатии курка в логе <b>пусто</b> — сканер ТСД не в режиме
-      эмуляции клавиатуры. Откройте на ТСД <b>ScanSettings / Настройки сканирования</b>
-      → <b>Режим вывода (Output mode)</b> → выберите <b>Keystroke / Эмуляция клавиатуры</b>
-      (не Intent/Broadcast, не Clipboard), суффикс — <b>Enter</b>.<br>
-      Если сканер перестал срабатывать после спящего режима — коснитесь
-      цветной полосы вверху экрана, ввод переподключится.
-    </div>
-  </div>
+
+    <ol class="log">
+      <li v-if="!log.length" class="log-empty">событий нет</li>
+      <li v-for="entry in log" :key="entry.id">
+        <span class="log-time">{{ entry.time }}</span> {{ entry.message }}
+      </li>
+    </ol>
+
+    <p class="hint">
+      Если при нажатии курка лог пуст — сканер не в режиме эмуляции клавиатуры.
+      На ТСД откройте <b>ScanSettings</b> → <b>Режим вывода</b> →
+      <b>Keystroke (эмуляция клавиатуры)</b>, суффикс — <b>Enter</b>.
+      Режимы Intent/Broadcast и Clipboard браузером не принимаются.
+      Если сканер замолчал после спящего режима — коснитесь цветной полосы вверху.
+    </p>
+  </section>
+
+  <div class="btn btn-reset" role="button" @click="reset">Сбросить собранные</div>
+
+  <input ref="scanField" class="scan-field" type="text"
+         autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+         @keydown="onFieldKeydown" @input="onFieldInput">
 </div>
 
-<input id="scan-input" type="text" autocomplete="off" autocorrect="off"
-       autocapitalize="off" spellcheck="false">
-
-<script>
-(function () {
-  var PRODUCTS = [
-    { name: 'DA103SHS', barcode: '2000000277523', collected: false },
-    { name: 'DA102SHS', barcode: '2000000277417', collected: false }
-  ];
-
-  var STORAGE_KEY = 'scan-app-state-v1';
-
-  var listEl    = document.getElementById('list');
-  var counterEl = document.getElementById('counter');
-  var bannerEl  = document.getElementById('status-banner');
-  var resetBtn  = document.getElementById('reset-btn');
-  var scanInput = document.getElementById('scan-input');
-  var focusDot  = document.getElementById('focus-dot');
-  var logEl     = document.getElementById('log');
-  var diagEl    = document.getElementById('diag');
-
-  /* ---------- лог диагностики ---------- */
-  var logLines = [];
-  function log(msg) {
-    var t = new Date();
-    var stamp = ('0' + t.getHours()).slice(-2) + ':' +
-                ('0' + t.getMinutes()).slice(-2) + ':' +
-                ('0' + t.getSeconds()).slice(-2) + '.' +
-                ('00' + t.getMilliseconds()).slice(-3);
-    logLines.push(stamp + '  ' + msg);
-    if (logLines.length > 60) logLines.shift();
-    logEl.textContent = logLines.join('\n');
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-
-  /* ---------- состояние ---------- */
-  function loadState() {
-    try {
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      var saved = JSON.parse(raw);
-      PRODUCTS.forEach(function (p) { if (saved[p.barcode]) p.collected = true; });
-    } catch (e) { log('localStorage read fail: ' + e.message); }
-  }
-
-  function saveState() {
-    try {
-      var map = {};
-      PRODUCTS.forEach(function (p) { map[p.barcode] = p.collected; });
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
-    } catch (e) { log('localStorage write fail: ' + e.message); }
-  }
-
-  function render() {
-    listEl.innerHTML = '';
-    var done = 0;
-    PRODUCTS.forEach(function (p) {
-      if (p.collected) done++;
-      var item = document.createElement('div');
-      item.className = 'item' + (p.collected ? ' collected' : '');
-      item.innerHTML =
-        '<div class="info">' +
-          '<div class="name">' + p.name + '</div>' +
-          '<div class="barcode">' + p.barcode + '</div>' +
-        '</div>' +
-        '<div class="mark">' + (p.collected ? '✓' : '') + '</div>';
-      listEl.appendChild(item);
-    });
-    counterEl.textContent = done + ' / ' + PRODUCTS.length;
-  }
-
-  /* ---------- звук ---------- */
-  var audioCtx = null;
-  function initAudio() {
-    try {
-      if (!audioCtx) {
-        var AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) { log('Web Audio не поддерживается'); return null; }
-        audioCtx = new AC();
-        log('AudioContext создан: ' + audioCtx.state);
-      }
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume().then(function () { log('AudioContext resumed'); });
-      }
-    } catch (e) { log('audio init fail: ' + e.message); }
-    return audioCtx;
-  }
-
-  function beep(freq, duration, type, delay) {
-    var ctx = initAudio();
-    if (!ctx) return;
-    try {
-      var t0 = ctx.currentTime + (delay || 0);
-      var osc = ctx.createOscillator();
-      var gain = ctx.createGain();
-      osc.type = type || 'sine';
-      osc.frequency.setValueAtTime(freq, t0);
-      gain.gain.setValueAtTime(0.0001, t0);
-      gain.gain.exponentialRampToValueAtTime(0.4, t0 + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(t0);
-      osc.stop(t0 + duration + 0.02);
-    } catch (e) { log('beep fail: ' + e.message); }
-  }
-
-  function vibrate(pattern) {
-    try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
-  }
-
-  /* Кривая перегруза — от неё зуммер становится грязным и режущим */
-  var distCurve = null;
-  function getDistCurve() {
-    if (distCurve) return distCurve;
-    var n = 1024, c = new Float32Array(n), k = 60;
-    for (var i = 0; i < n; i++) {
-      var x = i * 2 / n - 1;
-      c[i] = (1 + k) * x / (1 + k * Math.abs(x));
-    }
-    distCurve = c;
-    return c;
-  }
-
-  /* Резкий рваный зуммер: три расстроенные пилы через перегруз.
-     185/196 Гц дают биения, 262 Гц добавляет диссонанс — ухо режет. */
-  function buzz(bursts) {
-    var ctx = initAudio();
-    if (!ctx) return;
-    bursts = bursts || 3;
-    try {
-      var t0 = ctx.currentTime + 0.01;
-      var total = bursts * 0.21;
-
-      var master = ctx.createGain();
-      master.gain.value = 0.0001;
-
-      var shaper = ctx.createWaveShaper();
-      shaper.curve = getDistCurve();
-      shaper.oversample = '2x';
-
-      master.connect(shaper);
-      shaper.connect(ctx.destination);
-
-      [185, 196, 262].forEach(function (f) {
-        var osc = ctx.createOscillator();
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(f, t0);
-        osc.frequency.linearRampToValueAtTime(f * 0.82, t0 + total); // сползание вниз
-        osc.connect(master);
-        osc.start(t0);
-        osc.stop(t0 + total + 0.03);
-      });
-
-      var g = master.gain;
-      for (var i = 0; i < bursts; i++) {
-        var s = t0 + i * 0.21;
-        g.setValueAtTime(0.0001, s);
-        g.exponentialRampToValueAtTime(0.5, s + 0.008);
-        g.setValueAtTime(0.5, s + 0.14);
-        g.exponentialRampToValueAtTime(0.0001, s + 0.19);
-      }
-    } catch (e) { log('buzz fail: ' + e.message); }
-  }
-
-  function playSuccess() { beep(1200, 0.10, 'square', 0); vibrate(60); }
-
-  function playError(bursts) {
-    buzz(bursts);
-    vibrate(bursts === 2 ? [110, 70, 110] : [130, 60, 130, 60, 240]);
-  }
-
-  /* Разблокировка звука на первом касании экрана (требование Android) */
-  function unlockAudio() {
-    var ctx = initAudio();
-    if (ctx) {
-      try {
-        var b = ctx.createBufferSource();
-        b.buffer = ctx.createBuffer(1, 1, 22050);
-        b.connect(ctx.destination);
-        b.start(0);
-      } catch (e) {}
-    }
-  }
-  document.addEventListener('touchstart', unlockAudio, true);
-  document.addEventListener('click', unlockAudio, true);
-  document.addEventListener('keydown', unlockAudio, true);
-
-  /* ---------- баннер ---------- */
-  var bannerTimer = null;
-  function showBanner(text, kind) {
-    bannerEl.textContent = text;
-    bannerEl.className = kind || '';
-    clearTimeout(bannerTimer);
-    if (kind) {
-      bannerTimer = setTimeout(function () {
-        bannerEl.textContent = 'Отсканируйте товар';
-        bannerEl.className = '';
-      }, 4000);
-    }
-  }
-
-  /* ---------- обработка скана ---------- */
-  function handleScan(code, source) {
-    code = String(code || '').replace(/[\r\n\t]/g, '').trim();
-    if (!code) return;
-    log('СКАН [' + source + ']: "' + code + '" (' + code.length + ' симв.)');
-
-    var product = null;
-    for (var i = 0; i < PRODUCTS.length; i++) {
-      if (PRODUCTS[i].barcode === code) { product = PRODUCTS[i]; break; }
-    }
-
-    if (!product) {
-      playError(2);
-      showBanner('Неизвестный штрихкод:\n' + code, 'err');
-      return;
-    }
-    if (product.collected) {
-      playError(3);   // перебор — самый длинный и противный сигнал
-      showBanner('ПЕРЕБОР! ' + product.name + ' уже собран', 'err');
-      return;
-    }
-
-    product.collected = true;
-    saveState();
-    render();
-    playSuccess();
-    showBanner('Собран: ' + product.name, 'ok');
-  }
-
-  /* ---------- путь 1: сканер печатает в поле ввода ---------- */
-  var inputTimer = null;
-  function flushInput() {
-    clearTimeout(inputTimer);
-    var value = scanInput.value;
-    scanInput.value = '';
-    if (value) handleScan(value, 'input');
-  }
-
-  scanInput.addEventListener('keydown', function (e) {
-    log('keydown в поле: key="' + e.key + '" code=' + e.keyCode);
-    if (e.key === 'Enter' || e.key === 'Tab' || e.keyCode === 13 || e.keyCode === 9) {
-      e.preventDefault();
-      flushInput();
-    }
-  });
-
-  // Если сканер не шлёт Enter — срабатываем по паузе после ввода
-  scanInput.addEventListener('input', function () {
-    log('input: "' + scanInput.value + '"');
-    clearTimeout(inputTimer);
-    inputTimer = setTimeout(flushInput, 150);
-  });
-
-  /* ---------- путь 2: сканер шлёт клавиши мимо поля ---------- */
-  var buf = '';
-  var bufTimer = null;
-  function flushBuf() {
-    clearTimeout(bufTimer);
-    var value = buf;
-    buf = '';
-    if (value.length >= 4) handleScan(value, 'global');
-  }
-
-  document.addEventListener('keydown', function (e) {
-    if (e.target === scanInput) return;              // уже обработано путём 1
-    if (e.target && e.target.tagName === 'INPUT') return;
-
-    if (e.key === 'Enter' || e.key === 'Tab' || e.keyCode === 13 || e.keyCode === 9) {
-      e.preventDefault();
-      flushBuf();
-      return;
-    }
-    if (e.key && e.key.length === 1) {
-      log('keydown глобально: "' + e.key + '"');
-      buf += e.key;
-      clearTimeout(bufTimer);
-      bufTimer = setTimeout(flushBuf, 150);
-    }
-  });
-
-  /* ---------- удержание фокуса ---------- */
-  /* Кнопки не должны забирать фокус у поля-приёмника. Иначе после тапа
-     срабатывает blur -> focus() уже внутри жеста пользователя, и Android
-     на это открывает экранную клавиатуру. Отменяем фокусировку кнопок:
-     click при этом продолжает работать. */
-  function isBtn(el) {
-    return !!(el && el.closest && el.closest('.btn'));
-  }
-
-  function keepFocus(e) {
-    if (isBtn(e.target)) e.preventDefault();
-  }
-  document.addEventListener('pointerdown', keepFocus, true);
-  document.addEventListener('mousedown',   keepFocus, true);
-
-  var rebinding = false;
-
-  function doFocus() {
-    /* readonly-поле получает фокус, но клавиатуру не поднимает;
-       снимаем флаг сразу после — IME-приём символов со сканера сохраняется */
-    scanInput.readOnly = true;
-    try { scanInput.focus({ preventScroll: true }); } catch (e) { scanInput.focus(); }
-    setTimeout(function () { scanInput.readOnly = false; }, 60);
-  }
-
-  function focusInput() {
-    if (rebinding) return;
-    if (document.activeElement === scanInput) return;
-    doFocus();
-  }
-
-  /* Полная пересборка связи с IME. После выхода из спящего режима
-     activeElement всё ещё указывает на поле, но соединение с методом ввода
-     уже разорвано — обычный focus() при этом делает ранний return и ничего
-     не чинит. Поэтому принудительно снимаем фокус и ставим заново. */
-  function rebindInput(reason) {
-    if (rebinding) return;
-    rebinding = true;
-    log('пересборка ввода: ' + reason);
-    try { scanInput.blur(); } catch (e) {}
-    scanInput.value = '';
-    buf = '';
-    setTimeout(function () {
-      rebinding = false;
-      doFocus();
-      initAudio();               // после сна AudioContext тоже уходит в suspended
-    }, 120);
-  }
-
-  scanInput.addEventListener('blur', function () { setTimeout(focusInput, 50); });
-
-  setInterval(function () {
-    focusInput();
-    var ok = document.activeElement === scanInput;
-    focusDot.className = ok ? 'on' : '';
-  }, 500);
-
-  function refocusIfNotButton(e) {
-    if (isBtn(e.target)) return;
-    setTimeout(focusInput, 30);
-  }
-  document.addEventListener('touchstart', refocusIfNotButton);
-  document.addEventListener('click',      refocusIfNotButton);
-
-  /* Пробуждение устройства / возврат в приложение */
-  document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) rebindInput('visibilitychange');
-  });
-  window.addEventListener('focus',   function () { rebindInput('window focus'); });
-  window.addEventListener('pageshow', function () { rebindInput('pageshow'); });
-  document.addEventListener('resume', function () { rebindInput('resume'); });
-
-  /* ---------- кнопки ---------- */
-  resetBtn.addEventListener('click', function () {
-    PRODUCTS.forEach(function (p) { p.collected = false; });
-    saveState();
-    render();
-    showBanner('Список сброшен', '');
-    log('СБРОС списка');
-    setTimeout(focusInput, 50);
-  });
-
-  document.getElementById('diag-btn').addEventListener('click', function () {
-    diagEl.classList.toggle('open');
-  });
-  document.getElementById('test-ok').addEventListener('click', function () { playSuccess(); });
-  document.getElementById('test-err').addEventListener('click', function () { playError(3); });
-  document.getElementById('test-scan').addEventListener('click', function () {
-    handleScan('2000000277523', 'тест');
-  });
-  /* Ручное восстановление: тап по баннеру, если сканер вдруг «онемел» */
-  bannerEl.addEventListener('click', function () {
-    rebindInput('тап по баннеру');
-    showBanner('Ввод переподключён', '');
-  });
-
-  document.getElementById('rebind-btn').addEventListener('click', function () {
-    rebindInput('кнопка диагностики');
-  });
-  document.getElementById('clear-log').addEventListener('click', function () {
-    logLines = []; logEl.textContent = '';
-  });
-
-  /* ---------- старт ---------- */
-  loadState();
-  render();
-  focusInput();
-  log('Приложение запущено. UA: ' + navigator.userAgent.slice(0, 90));
-})();
-</script>
+<script src="vendor/vue.global.prod.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
