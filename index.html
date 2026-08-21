@@ -151,6 +151,7 @@
       <button id="test-ok">Тест звука OK</button>
       <button id="test-err">Тест звука ОШИБКА</button>
       <button id="test-scan">Тест скана DA103SHS</button>
+      <button id="rebind-btn">Пересобрать ввод</button>
       <button id="clear-log">Очистить лог</button>
     </div>
     <div id="log"></div>
@@ -158,7 +159,9 @@
       Если при нажатии курка в логе <b>пусто</b> — сканер ТСД не в режиме
       эмуляции клавиатуры. Откройте на ТСД <b>ScanSettings / Настройки сканирования</b>
       → <b>Режим вывода (Output mode)</b> → выберите <b>Keystroke / Эмуляция клавиатуры</b>
-      (не Intent/Broadcast, не Clipboard), суффикс — <b>Enter</b>.
+      (не Intent/Broadcast, не Clipboard), суффикс — <b>Enter</b>.<br>
+      Если сканер перестал срабатывать после спящего режима — коснитесь
+      цветной полосы вверху экрана, ввод переподключится.
     </div>
   </div>
 </div>
@@ -456,13 +459,38 @@
   document.addEventListener('pointerdown', keepFocus, true);
   document.addEventListener('mousedown',   keepFocus, true);
 
-  function focusInput() {
-    if (document.activeElement === scanInput) return;
+  var rebinding = false;
+
+  function doFocus() {
     /* readonly-поле получает фокус, но клавиатуру не поднимает;
        снимаем флаг сразу после — IME-приём символов со сканера сохраняется */
     scanInput.readOnly = true;
     try { scanInput.focus({ preventScroll: true }); } catch (e) { scanInput.focus(); }
     setTimeout(function () { scanInput.readOnly = false; }, 60);
+  }
+
+  function focusInput() {
+    if (rebinding) return;
+    if (document.activeElement === scanInput) return;
+    doFocus();
+  }
+
+  /* Полная пересборка связи с IME. После выхода из спящего режима
+     activeElement всё ещё указывает на поле, но соединение с методом ввода
+     уже разорвано — обычный focus() при этом делает ранний return и ничего
+     не чинит. Поэтому принудительно снимаем фокус и ставим заново. */
+  function rebindInput(reason) {
+    if (rebinding) return;
+    rebinding = true;
+    log('пересборка ввода: ' + reason);
+    try { scanInput.blur(); } catch (e) {}
+    scanInput.value = '';
+    buf = '';
+    setTimeout(function () {
+      rebinding = false;
+      doFocus();
+      initAudio();               // после сна AudioContext тоже уходит в suspended
+    }, 120);
   }
 
   scanInput.addEventListener('blur', function () { setTimeout(focusInput, 50); });
@@ -479,10 +507,14 @@
   }
   document.addEventListener('touchstart', refocusIfNotButton);
   document.addEventListener('click',      refocusIfNotButton);
-  window.addEventListener('focus',        function () { setTimeout(focusInput, 30); });
+
+  /* Пробуждение устройства / возврат в приложение */
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) setTimeout(focusInput, 100);
+    if (!document.hidden) rebindInput('visibilitychange');
   });
+  window.addEventListener('focus',   function () { rebindInput('window focus'); });
+  window.addEventListener('pageshow', function () { rebindInput('pageshow'); });
+  document.addEventListener('resume', function () { rebindInput('resume'); });
 
   /* ---------- кнопки ---------- */
   resetBtn.addEventListener('click', function () {
@@ -501,6 +533,15 @@
   document.getElementById('test-err').addEventListener('click', function () { playError(3); });
   document.getElementById('test-scan').addEventListener('click', function () {
     handleScan('2000000277523', 'тест');
+  });
+  /* Ручное восстановление: тап по баннеру, если сканер вдруг «онемел» */
+  bannerEl.addEventListener('click', function () {
+    rebindInput('тап по баннеру');
+    showBanner('Ввод переподключён', '');
+  });
+
+  document.getElementById('rebind-btn').addEventListener('click', function () {
+    rebindInput('кнопка диагностики');
   });
   document.getElementById('clear-log').addEventListener('click', function () {
     logLines = []; logEl.textContent = '';
