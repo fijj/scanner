@@ -2,7 +2,15 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1c1f24">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Сборка">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>Сборка заказа</title>
 <style>
   :root {
@@ -39,13 +47,13 @@
     flex-direction: column;
     min-height: 100vh;
     min-height: 100dvh;            /* 100vh на Android не учитывает адресную строку */
-    padding: 12px;
-    padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+    padding: calc(12px + env(safe-area-inset-top, 0px)) 12px
+             calc(88px + env(safe-area-inset-bottom, 0px));
   }
 
-  /* Кнопки намеренно свёрстаны на <div role="button">: нативный <button>
-     при тапе забирает фокус у поля-приёмника, из-за чего Android
-     поднимает экранную клавиатуру. Нефокусируемый элемент этого не делает. */
+  /* Кнопки намеренно свёрстаны на <span role="button">: нативный <button>
+     фокусируем, а любой сфокусированный элемент управления мешает
+     удержанию приёма со сканера. */
   .btn {
     display: inline-flex;
     align-items: center;
@@ -61,6 +69,7 @@
     color: #ddd;
   }
   .btn-ghost:active { background: #434b55; }
+  .btn-ghost.on { background: #1e5c33; color: var(--ok-text); }
 
   .header {
     display: flex;
@@ -70,15 +79,15 @@
   }
   .title { flex: 1; margin: 0; font-size: 20px; }
   .counter { font-size: 16px; color: var(--muted); }
-  .focus-dot {
+  .signal-dot {
     flex: none;
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: var(--err-bg);
-    transition: background .15s;
+    background: var(--border);
+    transition: background .1s;
   }
-  .focus-dot.live { background: var(--ok-border); }
+  .signal-dot.live { background: var(--ok-border); }
 
   .banner {
     display: flex;
@@ -162,9 +171,9 @@
 
   .hint { margin: 10px 0 0; font-size: 12px; color: #7d848d; }
 
-  /* Поле-приёмник ввода со сканера. Не делать его видимым и не задавать
-     inputmode="none" — Urovo отдаёт символы через IME, и любое из этих
-     изменений разрывает приём. */
+  /* Поле-приёмник для сканеров, отдающих текст через метод ввода.
+     По умолчанию readonly и не в фокусе: сфокусированное редактируемое поле
+     заставляет Android показывать экранную клавиатуру на каждом тапе. */
   .scan-field {
     position: fixed;
     top: -100px;
@@ -181,8 +190,7 @@
 <div id="app" v-cloak>
   <header class="header">
     <h1 class="title">Сборка заказа</h1>
-    <span class="focus-dot" :class="{ live: focused }"
-          :title="focused ? 'Готов к сканированию' : 'Ввод не активен'"></span>
+    <span class="signal-dot" :class="{ live: signal }" title="Приём данных от сканера"></span>
     <span class="counter">{{ collectedCount }} / {{ items.length }}</span>
     <span class="btn btn-ghost" role="button" @click="diagOpen = !diagOpen">диагностика</span>
   </header>
@@ -209,6 +217,9 @@
       <span class="btn btn-ghost" role="button" @click="testScan">Тест скана</span>
       <span class="btn btn-ghost" role="button" @click="reconnect">Пересобрать ввод</span>
       <span class="btn btn-ghost" role="button" @click="clearLog">Очистить лог</span>
+      <span class="btn btn-ghost" :class="{ on: imeMode }" role="button" @click="imeMode = !imeMode">
+        Режим IME: {{ imeMode ? 'вкл' : 'выкл' }}
+      </span>
     </div>
 
     <ol class="log">
@@ -219,17 +230,22 @@
     </ol>
 
     <p class="hint">
-      Если при нажатии курка лог пуст — сканер не в режиме эмуляции клавиатуры.
-      На ТСД откройте <b>ScanSettings</b> → <b>Режим вывода</b> →
-      <b>Keystroke (эмуляция клавиатуры)</b>, суффикс — <b>Enter</b>.
-      Режимы Intent/Broadcast и Clipboard браузером не принимаются.
-      Если сканер замолчал после спящего режима — коснитесь цветной полосы вверху.
+      Точка в шапке загорается зелёным, когда от сканера приходят данные.
+      Если при нажатии курка лог пуст — сканер не в режиме эмуляции клавиатуры:
+      на ТСД откройте <b>ScanSettings</b> → <b>Режим вывода</b> →
+      <b>Keystroke</b>, суффикс — <b>Enter</b>. Режимы Intent/Broadcast
+      и Clipboard браузером не принимаются.
+      <br>
+      <b>Режим IME</b> включайте только если сканер настроен на эмуляцию
+      клавиатуры, но лог по-прежнему пуст: тогда штрихкод принимается через
+      скрытое поле ввода. Побочный эффект — Android может показывать
+      экранную клавиатуру при касании экрана.
     </p>
   </section>
 
   <div class="btn btn-reset" role="button" @click="reset">Сбросить собранные</div>
 
-  <input ref="scanField" class="scan-field" type="text"
+  <input ref="scanField" class="scan-field" type="text" :readonly="!imeMode"
          autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
          @keydown="onFieldKeydown" @input="onFieldInput">
 </div>

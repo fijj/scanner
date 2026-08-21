@@ -4,8 +4,6 @@
 
   const { createApp, ref, reactive, computed, watch, onMounted, onBeforeUnmount } = Vue;
 
-  const STORAGE_KEY = 'scanner.collected.v1';
-
   const CATALOG = [
     { sku: 'DA103SHS', barcode: '2000000277523' },
     { sku: 'DA102SHS', barcode: '2000000277417' }
@@ -172,19 +170,31 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /*  Приём штрихкодов со сканера в режиме эмуляции клавиатуры           */
+  /*  Приём штрихкодов                                                   */
   /* ------------------------------------------------------------------ */
 
-  function useScanner({ onScan, log }) {
+  /*  Основной режим — перехват key-событий на документе. Ни один элемент
+      не держит фокус, и это принципиально: Chromium на каждом тапе вызывает
+      showImeIfNeeded(), и если фокус в этот момент удерживает редактируемое
+      поле, Android поднимает экранную клавиатуру — независимо от того, куда
+      пришёлся тап. Поэтому поле-приёмник по умолчанию readonly и не в фокусе.
+
+      Режим IME нужен лишь тем сканерам, которые отдают штрихкод не клавишами,
+      а вставкой текста через метод ввода: такому сканеру необходимо
+      сфокусированное редактируемое поле, и клавиатура в этом режиме возможна.  */
+
+  function useScanner({ onScan, log, imeMode }) {
     const IDLE_MS = 150;        // пауза, после которой код считается завершённым
-    const MIN_LENGTH = 4;       // короче — это ручной ввод, не скан
-    const FOCUS_POLL_MS = 500;
+    const MIN_LENGTH = 4;       // короче — это не штрихкод
+    const POLL_MS = 500;
+    const SIGNAL_MS = 200;
 
     const scanField = ref(null);
-    const focused = ref(false);
+    const signal = ref(false);  // индикатор: от сканера пришли данные
 
     let fieldTimer = null;
     let bufferTimer = null;
+    let signalTimer = null;
     let poller = null;
     let buffer = '';
     let rebinding = false;
@@ -192,48 +202,29 @@
     const isTerminator = (e) =>
       e.key === 'Enter' || e.key === 'Tab' || e.keyCode === 13 || e.keyCode === 9;
 
-    const isButton = (el) => Boolean(el && el.closest && el.closest('.btn'));
+    function flash() {
+      signal.value = true;
+      clearTimeout(signalTimer);
+      signalTimer = setTimeout(() => { signal.value = false; }, SIGNAL_MS);
+    }
 
     function submit(raw, source) {
       const code = String(raw || '').replace(/[\r\n\t]/g, '').trim();
       if (code) onScan(code, source);
     }
 
-    /* --- Путь 1: сканер печатает в скрытое поле --- */
-
-    function flushField() {
-      clearTimeout(fieldTimer);
-      const field = scanField.value;
-      if (!field) return;
-      const value = field.value;
-      field.value = '';
-      submit(value, 'поле');
-    }
-
-    function onFieldKeydown(e) {
-      if (isTerminator(e)) {
-        e.preventDefault();
-        flushField();
-      }
-    }
-
-    function onFieldInput() {
-      // Сканер может не отправлять Enter — тогда код закрывается по паузе
-      clearTimeout(fieldTimer);
-      fieldTimer = setTimeout(flushField, IDLE_MS);
-    }
-
-    /* --- Путь 2: клавиши прошли мимо поля --- */
+    /* --- Перехват клавиш на документе (основной путь) --- */
 
     function flushBuffer() {
       clearTimeout(bufferTimer);
       const value = buffer;
       buffer = '';
-      if (value.length >= MIN_LENGTH) submit(value, 'документ');
+      if (value.length >= MIN_LENGTH) submit(value, 'клавиши');
     }
 
     function onDocumentKeydown(e) {
-      if (e.target && e.target.tagName === 'INPUT') return;   // обработано путём 1
+      if (e.target === scanField.value) return;   // обработано полем в режиме IME
+      flash();
 
       if (isTerminator(e)) {
         e.preventDefault();
@@ -247,39 +238,67 @@
       }
     }
 
-    /* --- Удержание фокуса --- */
+    /* --- Приём через поле-приёмник (режим IME) --- */
+
+    function flushField() {
+      clearTimeout(fieldTimer);
+      const field = scanField.value;
+      if (!field) return;
+      const value = field.value;
+      field.value = '';
+      submit(value, 'IME');
+    }
+
+    function onFieldKeydown(e) {
+      flash();
+      if (isTerminator(e)) {
+        e.preventDefault();
+        flushField();
+      }
+    }
+
+    function onFieldInput() {
+      flash();
+      // Сканер может не отправлять Enter — тогда код закрывается по паузе
+      clearTimeout(fieldTimer);
+      fieldTimer = setTimeout(flushField, IDLE_MS);
+    }
+
+    /* --- Фокус: нужен исключительно в режиме IME --- */
 
     function applyFocus() {
       const field = scanField.value;
       if (!field) return;
-      // readonly-поле принимает фокус, но не поднимает экранную клавиатуру;
-      // флаг снимается сразу, поэтому приём символов через IME сохраняется
-      field.readOnly = true;
       try {
         field.focus({ preventScroll: true });
       } catch (e) {
         field.focus();
       }
-      setTimeout(() => { field.readOnly = false; }, 60);
     }
 
     function keepFocus() {
-      if (rebinding || document.activeElement === scanField.value) return;
+      if (!imeMode.value || rebinding) return;
+      if (document.activeElement === scanField.value) return;
       applyFocus();
     }
 
-    /* Полная пересборка связи с методом ввода. После выхода из спящего режима
+    /* Пересборка связи с методом ввода. После выхода из спящего режима
        activeElement всё ещё указывает на поле, хотя соединение с IME уже
        разорвано, — обычная фокусировка такую ситуацию не распознаёт. */
     function rebind(reason) {
+      buffer = '';
       const field = scanField.value;
+
+      if (!imeMode.value) {
+        log('буфер очищен: ' + reason);
+        return;
+      }
       if (rebinding || !field) return;
 
       rebinding = true;
       log('пересборка ввода: ' + reason);
       field.blur();
       field.value = '';
-      buffer = '';
 
       setTimeout(() => {
         rebinding = false;
@@ -287,69 +306,58 @@
       }, 120);
     }
 
-    /* --- Слушатели документа --- */
+    watch(imeMode, (on) => {
+      log('режим приёма: ' + (on ? 'через поле (IME)' : 'клавиши'));
+      if (on) applyFocus();
+      else if (scanField.value) scanField.value.blur();
+    });
 
-    // Тап по кнопке не должен уводить фокус: иначе возврат фокуса произойдёт
-    // внутри жеста пользователя и Android покажет экранную клавиатуру
-    const onPointerDown = (e) => { if (isButton(e.target)) e.preventDefault(); };
-    const onTap = (e) => { if (!isButton(e.target)) setTimeout(keepFocus, 30); };
-    const onWake = () => rebind('пробуждение');
     const onVisibility = () => { if (!document.hidden) rebind('возврат в приложение'); };
+    const onWake = () => rebind('пробуждение');
 
     onMounted(() => {
       document.addEventListener('keydown', onDocumentKeydown);
-      document.addEventListener('pointerdown', onPointerDown, true);
-      document.addEventListener('mousedown', onPointerDown, true);
-      document.addEventListener('touchstart', onTap);
-      document.addEventListener('click', onTap);
       document.addEventListener('visibilitychange', onVisibility);
       window.addEventListener('focus', onWake);
       window.addEventListener('pageshow', onWake);
 
-      poller = setInterval(() => {
-        keepFocus();
-        focused.value = document.activeElement === scanField.value;
-      }, FOCUS_POLL_MS);
-
-      applyFocus();
+      poller = setInterval(keepFocus, POLL_MS);
+      if (imeMode.value) applyFocus();
     });
 
     onBeforeUnmount(() => {
       document.removeEventListener('keydown', onDocumentKeydown);
-      document.removeEventListener('pointerdown', onPointerDown, true);
-      document.removeEventListener('mousedown', onPointerDown, true);
-      document.removeEventListener('touchstart', onTap);
-      document.removeEventListener('click', onTap);
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', onWake);
       window.removeEventListener('pageshow', onWake);
       clearInterval(poller);
       clearTimeout(fieldTimer);
       clearTimeout(bufferTimer);
+      clearTimeout(signalTimer);
     });
 
-    return { scanField, focused, onFieldKeydown, onFieldInput, rebind };
+    return { scanField, signal, onFieldKeydown, onFieldInput, rebind };
   }
 
   /* ------------------------------------------------------------------ */
-  /*  Сохранение состояния сборки                                        */
+  /*  Хранилище                                                          */
   /* ------------------------------------------------------------------ */
 
-  function useStorage(log) {
+  function useStorage(key, log) {
     function read() {
       try {
-        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+        return JSON.parse(localStorage.getItem(key)) || {};
       } catch (e) {
-        log('состояние не прочитано: ' + e.message);
+        log(`${key}: не прочитано (${e.message})`);
         return {};
       }
     }
 
     function write(state) {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        localStorage.setItem(key, JSON.stringify(state));
       } catch (e) {
-        log('состояние не сохранено: ' + e.message);
+        log(`${key}: не сохранено (${e.message})`);
       }
     }
 
@@ -360,18 +368,34 @@
   /*  Приложение                                                         */
   /* ------------------------------------------------------------------ */
 
+  /*  Service worker даёт офлайн-работу и установку на главный экран.
+      Регистрация возможна только на защищённом origin (https или localhost);
+      при открытии файла напрямую через file:// её просто не будет.  */
+  function registerServiceWorker(log) {
+    if (!('serviceWorker' in navigator) || !window.isSecureContext) {
+      log('офлайн-режим недоступен: нужен https или localhost');
+      return;
+    }
+    navigator.serviceWorker.register('sw.js')
+      .then(() => log('офлайн-режим включён'))
+      .catch((e) => log('service worker не зарегистрирован: ' + e.message));
+  }
+
   createApp({
     setup() {
+      const IDLE_STATUS = 'Отсканируйте товар';
+
       const { entries: log, push: write, clear: clearLog } = useLog();
       const signals = useSignals(write);
-      const storage = useStorage(write);
+      const progress = useStorage('scanner.collected.v1', write);
+      const settings = useStorage('scanner.settings.v1', write);
 
-      const saved = storage.read();
+      const saved = progress.read();
       const items = reactive(
         CATALOG.map((product) => ({ ...product, collected: Boolean(saved[product.barcode]) }))
       );
 
-      const IDLE_STATUS = 'Отсканируйте товар';
+      const imeMode = ref(Boolean(settings.read().imeMode));
       const diagOpen = ref(false);
       const status = reactive({ text: IDLE_STATUS, kind: '' });
       let statusTimer = null;
@@ -407,16 +431,18 @@
         setStatus('Собран: ' + item.sku, 'ok');
       }
 
-      const scanner = useScanner({ onScan: handleScan, log: write });
+      const scanner = useScanner({ onScan: handleScan, log: write, imeMode });
 
       watch(
         items,
-        () => storage.write(items.reduce((state, item) => {
+        () => progress.write(items.reduce((state, item) => {
           state[item.barcode] = item.collected;
           return state;
         }, {})),
         { deep: true }
       );
+
+      watch(imeMode, (on) => settings.write({ imeMode: on }));
 
       function reset() {
         items.forEach((item) => { item.collected = false; });
@@ -429,7 +455,10 @@
         setStatus('Ввод переподключён');
       }
 
-      onMounted(() => write('запуск: ' + navigator.userAgent.slice(0, 80)));
+      onMounted(() => {
+        write('запуск: ' + navigator.userAgent.slice(0, 80));
+        registerServiceWorker(write);
+      });
 
       return {
         items,
@@ -437,6 +466,7 @@
         status,
         log,
         diagOpen,
+        imeMode,
         reset,
         reconnect,
         clearLog,
@@ -444,7 +474,7 @@
         testError: () => signals.error(3),
         testScan: () => handleScan(CATALOG[0].barcode, 'тест'),
         scanField: scanner.scanField,
-        focused: scanner.focused,
+        signal: scanner.signal,
         onFieldKeydown: scanner.onFieldKeydown,
         onFieldInput: scanner.onFieldInput
       };
