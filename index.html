@@ -7,7 +7,7 @@
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
-    margin: 0; padding: 0; height: 100%;
+    margin: 0; padding: 0; min-height: 100%;
     font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
     background: #1c1f24;
     color: #eee;
@@ -23,18 +23,18 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
+    gap: 8px;
   }
-  h1 {
-    font-size: 20px;
-    margin: 0;
+  h1 { font-size: 20px; margin: 0; }
+  #counter { font-size: 16px; color: #aaa; }
+  #diag-btn {
+    background: #333941; color: #9aa0a8; border: none;
+    border-radius: 8px; padding: 8px 10px; font-size: 12px;
   }
-  #counter {
-    font-size: 16px;
-    color: #aaa;
-  }
+
   #status-banner {
-    min-height: 56px;
+    min-height: 60px;
     border-radius: 10px;
     display: flex;
     align-items: center;
@@ -43,20 +43,38 @@
     font-weight: bold;
     text-align: center;
     padding: 8px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
     background: #2a2e35;
     color: #888;
-    transition: background 0.15s, color 0.15s;
+    transition: background .12s, color .12s;
   }
-  #status-banner.ok { background: #1e5c33; color: #b7ffcf; }
+  #status-banner.ok  { background: #1e5c33; color: #b7ffcf; }
   #status-banner.err { background: #6b1f1f; color: #ffd0d0; }
 
-  #list {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+  /* Поле должно быть РЕАЛЬНО видимым, иначе Android не даёт ему фокус */
+  #scan-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 12px;
   }
+  #scan-input {
+    flex: 1;
+    padding: 12px;
+    font-size: 16px;
+    border-radius: 10px;
+    border: 2px solid #3a3f47;
+    background: #14171b;
+    color: #cfd4da;
+    outline: none;
+  }
+  #scan-input:focus { border-color: #35c168; }
+  #focus-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #6b1f1f; flex: none;
+    transition: background .15s;
+  }
+  #focus-dot.on { background: #35c168; }
+
+  #list { flex: 1; display: flex; flex-direction: column; gap: 10px; }
   .item {
     border: 2px solid #3a3f47;
     border-radius: 12px;
@@ -65,26 +83,12 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    transition: background 0.2s, border-color 0.2s;
+    transition: background .2s, border-color .2s;
   }
-  .item.collected {
-    background: #1e5c33;
-    border-color: #35c168;
-  }
-  .item .info .name {
-    font-size: 20px;
-    font-weight: bold;
-  }
-  .item .info .barcode {
-    font-size: 13px;
-    color: #9aa0a8;
-    margin-top: 4px;
-  }
-  .item .mark {
-    font-size: 28px;
-    width: 40px;
-    text-align: center;
-  }
+  .item.collected { background: #1e5c33; border-color: #35c168; }
+  .item .name { font-size: 20px; font-weight: bold; }
+  .item .barcode { font-size: 13px; color: #9aa0a8; margin-top: 4px; }
+  .item .mark { font-size: 28px; width: 40px; text-align: center; }
 
   #reset-btn {
     margin-top: 16px;
@@ -95,18 +99,38 @@
     border-radius: 12px;
     background: #7a2222;
     color: #fff;
-    cursor: pointer;
   }
   #reset-btn:active { background: #591616; }
 
-  #scan-input {
-    position: fixed;
-    top: -100px;
-    left: 0;
-    width: 1px;
-    height: 1px;
-    opacity: 0;
-    pointer-events: none;
+  #diag {
+    display: none;
+    margin-top: 14px;
+    border-top: 1px solid #3a3f47;
+    padding-top: 12px;
+  }
+  #diag.open { display: block; }
+  #diag h2 { font-size: 14px; margin: 0 0 8px; color: #9aa0a8; }
+  #diag .row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  #diag button {
+    background: #333941; color: #ddd; border: none;
+    border-radius: 8px; padding: 10px 12px; font-size: 13px;
+  }
+  #log {
+    background: #101317;
+    border-radius: 8px;
+    padding: 8px;
+    font-family: Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.45;
+    color: #8fb4c9;
+    max-height: 200px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    user-select: text;
+  }
+  #hint {
+    margin-top: 10px; font-size: 12px; color: #7d848d; line-height: 1.5;
   }
 </style>
 </head>
@@ -115,53 +139,96 @@
   <header>
     <h1>Сборка заказа</h1>
     <div id="counter">0 / 2</div>
+    <button id="diag-btn">диагностика</button>
   </header>
 
   <div id="status-banner">Отсканируйте товар</div>
 
+  <div id="scan-row">
+    <div id="focus-dot" title="фокус"></div>
+    <input id="scan-input" type="text" inputmode="none"
+           autocomplete="off" autocorrect="off" autocapitalize="off"
+           spellcheck="false" placeholder="Наведите сканер и нажмите курок">
+  </div>
+
   <div id="list"></div>
 
   <button id="reset-btn">Сбросить собранные</button>
-</div>
 
-<input id="scan-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+  <div id="diag">
+    <h2>Диагностика сканера</h2>
+    <div class="row">
+      <button id="test-ok">Тест звука OK</button>
+      <button id="test-err">Тест звука ОШИБКА</button>
+      <button id="test-scan">Тест скана DA103SHS</button>
+      <button id="clear-log">Очистить лог</button>
+    </div>
+    <div id="log"></div>
+    <div id="hint">
+      Если при нажатии курка в логе <b>пусто</b> — сканер ТСД не в режиме
+      эмуляции клавиатуры. Откройте на ТСД <b>ScanSettings / Настройки сканирования</b>
+      → <b>Режим вывода (Output mode)</b> → выберите <b>Keystroke / Эмуляция клавиатуры</b>
+      (не Intent/Broadcast, не Clipboard), суффикс — <b>Enter</b>.
+    </div>
+  </div>
+</div>
 
 <script>
 (function () {
-  const PRODUCTS = [
+  var PRODUCTS = [
     { name: 'DA103SHS', barcode: '2000000277523', collected: false },
-    { name: 'DA102SHS', barcode: '2000000277417', collected: false },
+    { name: 'DA102SHS', barcode: '2000000277417', collected: false }
   ];
 
-  const STORAGE_KEY = 'scan-app-state-v1';
+  var STORAGE_KEY = 'scan-app-state-v1';
 
-  const listEl = document.getElementById('list');
-  const counterEl = document.getElementById('counter');
-  const bannerEl = document.getElementById('status-banner');
-  const resetBtn = document.getElementById('reset-btn');
-  const scanInput = document.getElementById('scan-input');
+  var listEl    = document.getElementById('list');
+  var counterEl = document.getElementById('counter');
+  var bannerEl  = document.getElementById('status-banner');
+  var resetBtn  = document.getElementById('reset-btn');
+  var scanInput = document.getElementById('scan-input');
+  var focusDot  = document.getElementById('focus-dot');
+  var logEl     = document.getElementById('log');
+  var diagEl    = document.getElementById('diag');
 
+  /* ---------- лог диагностики ---------- */
+  var logLines = [];
+  function log(msg) {
+    var t = new Date();
+    var stamp = ('0' + t.getHours()).slice(-2) + ':' +
+                ('0' + t.getMinutes()).slice(-2) + ':' +
+                ('0' + t.getSeconds()).slice(-2) + '.' +
+                ('00' + t.getMilliseconds()).slice(-3);
+    logLines.push(stamp + '  ' + msg);
+    if (logLines.length > 60) logLines.shift();
+    logEl.textContent = logLines.join('\n');
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  /* ---------- состояние ---------- */
   function loadState() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      var raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
-      const saved = JSON.parse(raw);
-      PRODUCTS.forEach(p => { if (saved[p.barcode]) p.collected = true; });
-    } catch (e) {}
+      var saved = JSON.parse(raw);
+      PRODUCTS.forEach(function (p) { if (saved[p.barcode]) p.collected = true; });
+    } catch (e) { log('localStorage read fail: ' + e.message); }
   }
 
   function saveState() {
-    const map = {};
-    PRODUCTS.forEach(p => { map[p.barcode] = p.collected; });
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+    try {
+      var map = {};
+      PRODUCTS.forEach(function (p) { map[p.barcode] = p.collected; });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+    } catch (e) { log('localStorage write fail: ' + e.message); }
   }
 
   function render() {
     listEl.innerHTML = '';
-    let collectedCount = 0;
-    PRODUCTS.forEach(p => {
-      if (p.collected) collectedCount++;
-      const item = document.createElement('div');
+    var done = 0;
+    PRODUCTS.forEach(function (p) {
+      if (p.collected) done++;
+      var item = document.createElement('div');
       item.className = 'item' + (p.collected ? ' collected' : '');
       item.innerHTML =
         '<div class="info">' +
@@ -171,65 +238,105 @@
         '<div class="mark">' + (p.collected ? '✓' : '') + '</div>';
       listEl.appendChild(item);
     });
-    counterEl.textContent = collectedCount + ' / ' + PRODUCTS.length;
+    counterEl.textContent = done + ' / ' + PRODUCTS.length;
   }
 
-  // --- Звук через Web Audio API ---
-  let audioCtx = null;
-  function getAudioCtx() {
-    if (!audioCtx) {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (audioCtx.state === 'suspended') audioCtx.resume();
+  /* ---------- звук ---------- */
+  var audioCtx = null;
+  function initAudio() {
+    try {
+      if (!audioCtx) {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) { log('Web Audio не поддерживается'); return null; }
+        audioCtx = new AC();
+        log('AudioContext создан: ' + audioCtx.state);
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume().then(function () { log('AudioContext resumed'); });
+      }
+    } catch (e) { log('audio init fail: ' + e.message); }
     return audioCtx;
   }
 
-  function beep(freq, duration, type) {
+  function beep(freq, duration, type, delay) {
+    var ctx = initAudio();
+    if (!ctx) return;
     try {
-      const ctx = getAudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      var t0 = ctx.currentTime + (delay || 0);
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
       osc.type = type || 'sine';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.25, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      osc.frequency.setValueAtTime(freq, t0);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.4, t0 + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + duration);
-    } catch (e) {}
+      osc.start(t0);
+      osc.stop(t0 + duration + 0.02);
+    } catch (e) { log('beep fail: ' + e.message); }
   }
 
-  function playSuccess() {
-    beep(1046, 0.12, 'sine');
+  function vibrate(pattern) {
+    try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
   }
 
-  function playError() {
-    beep(220, 0.18, 'square');
-    setTimeout(() => beep(180, 0.22, 'square'), 150);
+  function playSuccess() { beep(1200, 0.10, 'square', 0); vibrate(60); }
+  function playError()   {
+    beep(300, 0.16, 'square', 0);
+    beep(200, 0.22, 'square', 0.20);
+    vibrate([90, 70, 160]);
   }
 
+  /* Разблокировка звука на первом касании экрана (требование Android) */
+  function unlockAudio() {
+    var ctx = initAudio();
+    if (ctx) {
+      try {
+        var b = ctx.createBufferSource();
+        b.buffer = ctx.createBuffer(1, 1, 22050);
+        b.connect(ctx.destination);
+        b.start(0);
+      } catch (e) {}
+    }
+  }
+  document.addEventListener('touchstart', unlockAudio, true);
+  document.addEventListener('click', unlockAudio, true);
+  document.addEventListener('keydown', unlockAudio, true);
+
+  /* ---------- баннер ---------- */
+  var bannerTimer = null;
   function showBanner(text, kind) {
     bannerEl.textContent = text;
-    bannerEl.className = kind ? kind : '';
+    bannerEl.className = kind || '';
+    clearTimeout(bannerTimer);
+    if (kind) {
+      bannerTimer = setTimeout(function () {
+        bannerEl.textContent = 'Отсканируйте товар';
+        bannerEl.className = '';
+      }, 4000);
+    }
   }
 
-  // --- Обработка скана ---
-  function handleScan(code) {
-    code = (code || '').trim();
+  /* ---------- обработка скана ---------- */
+  function handleScan(code, source) {
+    code = String(code || '').replace(/[\r\n\t]/g, '').trim();
     if (!code) return;
+    log('СКАН [' + source + ']: "' + code + '" (' + code.length + ' симв.)');
 
-    const product = PRODUCTS.find(p => p.barcode === code);
+    var product = null;
+    for (var i = 0; i < PRODUCTS.length; i++) {
+      if (PRODUCTS[i].barcode === code) { product = PRODUCTS[i]; break; }
+    }
 
     if (!product) {
       playError();
-      showBanner('Неизвестный штрихкод: ' + code, 'err');
+      showBanner('Неизвестный штрихкод:\n' + code, 'err');
       return;
     }
-
     if (product.collected) {
       playError();
-      showBanner('Перебор! ' + product.name + ' уже собран', 'err');
+      showBanner('ПЕРЕБОР! ' + product.name + ' уже собран', 'err');
       return;
     }
 
@@ -240,53 +347,105 @@
     showBanner('Собран: ' + product.name, 'ok');
   }
 
-  // --- Захват ввода со сканера (эмуляция клавиатуры) ---
-  function focusInput() {
-    scanInput.focus();
+  /* ---------- путь 1: сканер печатает в поле ввода ---------- */
+  var inputTimer = null;
+  function flushInput() {
+    clearTimeout(inputTimer);
+    var value = scanInput.value;
+    scanInput.value = '';
+    if (value) handleScan(value, 'input');
   }
 
   scanInput.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' || e.key === 'Tab') {
+    log('keydown в поле: key="' + e.key + '" code=' + e.keyCode);
+    if (e.key === 'Enter' || e.key === 'Tab' || e.keyCode === 13 || e.keyCode === 9) {
       e.preventDefault();
-      const value = scanInput.value;
-      scanInput.value = '';
-      handleScan(value);
+      flushInput();
     }
   });
 
-  // На случай, если сканер не шлёт Enter — срабатывание по паузе после ввода
-  let inputTimer = null;
+  // Если сканер не шлёт Enter — срабатываем по паузе после ввода
   scanInput.addEventListener('input', function () {
+    log('input: "' + scanInput.value + '"');
     clearTimeout(inputTimer);
-    inputTimer = setTimeout(function () {
-      const value = scanInput.value;
-      if (value) {
-        scanInput.value = '';
-        handleScan(value);
-      }
-    }, 300);
+    inputTimer = setTimeout(flushInput, 150);
   });
 
-  scanInput.addEventListener('blur', function () {
-    setTimeout(focusInput, 50);
+  /* ---------- путь 2: сканер шлёт клавиши мимо поля ---------- */
+  var buf = '';
+  var bufTimer = null;
+  function flushBuf() {
+    clearTimeout(bufTimer);
+    var value = buf;
+    buf = '';
+    if (value.length >= 4) handleScan(value, 'global');
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.target === scanInput) return;              // уже обработано путём 1
+    if (e.target && e.target.tagName === 'INPUT') return;
+
+    if (e.key === 'Enter' || e.key === 'Tab' || e.keyCode === 13 || e.keyCode === 9) {
+      e.preventDefault();
+      flushBuf();
+      return;
+    }
+    if (e.key && e.key.length === 1) {
+      log('keydown глобально: "' + e.key + '"');
+      buf += e.key;
+      clearTimeout(bufTimer);
+      bufTimer = setTimeout(flushBuf, 150);
+    }
   });
 
-  document.addEventListener('click', focusInput);
-  document.addEventListener('touchstart', focusInput);
+  /* ---------- удержание фокуса ---------- */
+  function focusInput() {
+    var a = document.activeElement;
+    if (a === scanInput) return;
+    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'BUTTON')) return;
+    try { scanInput.focus({ preventScroll: true }); } catch (e) { scanInput.focus(); }
+  }
 
+  setInterval(function () {
+    focusInput();
+    var ok = document.activeElement === scanInput;
+    focusDot.className = ok ? 'on' : '';
+  }, 500);
+
+  document.addEventListener('touchstart', function () { setTimeout(focusInput, 30); });
+  document.addEventListener('click',      function () { setTimeout(focusInput, 30); });
+  window.addEventListener('focus',        function () { setTimeout(focusInput, 30); });
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) setTimeout(focusInput, 100);
+  });
+
+  /* ---------- кнопки ---------- */
   resetBtn.addEventListener('click', function () {
-    PRODUCTS.forEach(p => { p.collected = false; });
+    PRODUCTS.forEach(function (p) { p.collected = false; });
     saveState();
     render();
     showBanner('Список сброшен', '');
-    focusInput();
+    log('СБРОС списка');
+    setTimeout(focusInput, 50);
   });
 
-  // --- Инициализация ---
+  document.getElementById('diag-btn').addEventListener('click', function () {
+    diagEl.classList.toggle('open');
+  });
+  document.getElementById('test-ok').addEventListener('click', function () { playSuccess(); });
+  document.getElementById('test-err').addEventListener('click', function () { playError(); });
+  document.getElementById('test-scan').addEventListener('click', function () {
+    handleScan('2000000277523', 'тест');
+  });
+  document.getElementById('clear-log').addEventListener('click', function () {
+    logLines = []; logEl.textContent = '';
+  });
+
+  /* ---------- старт ---------- */
   loadState();
   render();
   focusInput();
-  setInterval(focusInput, 1000);
+  log('Приложение запущено. UA: ' + navigator.userAgent.slice(0, 90));
 })();
 </script>
 </body>
