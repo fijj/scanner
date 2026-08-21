@@ -51,24 +51,20 @@
   #status-banner.ok  { background: #1e5c33; color: #b7ffcf; }
   #status-banner.err { background: #6b1f1f; color: #ffd0d0; }
 
-  /* Поле должно быть РЕАЛЬНО видимым, иначе Android не даёт ему фокус */
-  #scan-row {
-    display: flex; align-items: center; gap: 8px;
-    margin-bottom: 12px;
-  }
+  /* Скрытое поле-приёмник. НЕ делать его видимым и НЕ ставить
+     inputmode="none" — Urovo отдаёт символы через IME, и оба этих
+     изменения рвут ввод со сканера. */
   #scan-input {
-    flex: 1;
-    padding: 12px;
-    font-size: 16px;
-    border-radius: 10px;
-    border: 2px solid #3a3f47;
-    background: #14171b;
-    color: #cfd4da;
-    outline: none;
+    position: fixed;
+    top: -100px;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
   }
-  #scan-input:focus { border-color: #35c168; }
   #focus-dot {
-    width: 14px; height: 14px; border-radius: 50%;
+    width: 12px; height: 12px; border-radius: 50%;
     background: #6b1f1f; flex: none;
     transition: background .15s;
   }
@@ -138,18 +134,12 @@
 <div id="app">
   <header>
     <h1>Сборка заказа</h1>
+    <div id="focus-dot" title="готов к сканированию"></div>
     <div id="counter">0 / 2</div>
     <button id="diag-btn">диагностика</button>
   </header>
 
   <div id="status-banner">Отсканируйте товар</div>
-
-  <div id="scan-row">
-    <div id="focus-dot" title="фокус"></div>
-    <input id="scan-input" type="text" inputmode="none"
-           autocomplete="off" autocorrect="off" autocapitalize="off"
-           spellcheck="false" placeholder="Наведите сканер и нажмите курок">
-  </div>
 
   <div id="list"></div>
 
@@ -172,6 +162,9 @@
     </div>
   </div>
 </div>
+
+<input id="scan-input" type="text" autocomplete="off" autocorrect="off"
+       autocapitalize="off" spellcheck="false">
 
 <script>
 (function () {
@@ -454,11 +447,11 @@
 
   /* ---------- удержание фокуса ---------- */
   function focusInput() {
-    var a = document.activeElement;
-    if (a === scanInput) return;
-    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'BUTTON')) return;
+    if (document.activeElement === scanInput) return;
     try { scanInput.focus({ preventScroll: true }); } catch (e) { scanInput.focus(); }
   }
+
+  scanInput.addEventListener('blur', function () { setTimeout(focusInput, 50); });
 
   setInterval(function () {
     focusInput();
