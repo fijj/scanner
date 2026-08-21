@@ -281,11 +281,65 @@
     try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
   }
 
+  /* Кривая перегруза — от неё зуммер становится грязным и режущим */
+  var distCurve = null;
+  function getDistCurve() {
+    if (distCurve) return distCurve;
+    var n = 1024, c = new Float32Array(n), k = 60;
+    for (var i = 0; i < n; i++) {
+      var x = i * 2 / n - 1;
+      c[i] = (1 + k) * x / (1 + k * Math.abs(x));
+    }
+    distCurve = c;
+    return c;
+  }
+
+  /* Резкий рваный зуммер: три расстроенные пилы через перегруз.
+     185/196 Гц дают биения, 262 Гц добавляет диссонанс — ухо режет. */
+  function buzz(bursts) {
+    var ctx = initAudio();
+    if (!ctx) return;
+    bursts = bursts || 3;
+    try {
+      var t0 = ctx.currentTime + 0.01;
+      var total = bursts * 0.21;
+
+      var master = ctx.createGain();
+      master.gain.value = 0.0001;
+
+      var shaper = ctx.createWaveShaper();
+      shaper.curve = getDistCurve();
+      shaper.oversample = '2x';
+
+      master.connect(shaper);
+      shaper.connect(ctx.destination);
+
+      [185, 196, 262].forEach(function (f) {
+        var osc = ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(f, t0);
+        osc.frequency.linearRampToValueAtTime(f * 0.82, t0 + total); // сползание вниз
+        osc.connect(master);
+        osc.start(t0);
+        osc.stop(t0 + total + 0.03);
+      });
+
+      var g = master.gain;
+      for (var i = 0; i < bursts; i++) {
+        var s = t0 + i * 0.21;
+        g.setValueAtTime(0.0001, s);
+        g.exponentialRampToValueAtTime(0.5, s + 0.008);
+        g.setValueAtTime(0.5, s + 0.14);
+        g.exponentialRampToValueAtTime(0.0001, s + 0.19);
+      }
+    } catch (e) { log('buzz fail: ' + e.message); }
+  }
+
   function playSuccess() { beep(1200, 0.10, 'square', 0); vibrate(60); }
-  function playError()   {
-    beep(300, 0.16, 'square', 0);
-    beep(200, 0.22, 'square', 0.20);
-    vibrate([90, 70, 160]);
+
+  function playError(bursts) {
+    buzz(bursts);
+    vibrate(bursts === 2 ? [110, 70, 110] : [130, 60, 130, 60, 240]);
   }
 
   /* Разблокировка звука на первом касании экрана (требование Android) */
@@ -330,12 +384,12 @@
     }
 
     if (!product) {
-      playError();
+      playError(2);
       showBanner('Неизвестный штрихкод:\n' + code, 'err');
       return;
     }
     if (product.collected) {
-      playError();
+      playError(3);   // перебор — самый длинный и противный сигнал
       showBanner('ПЕРЕБОР! ' + product.name + ' уже собран', 'err');
       return;
     }
@@ -433,7 +487,7 @@
     diagEl.classList.toggle('open');
   });
   document.getElementById('test-ok').addEventListener('click', function () { playSuccess(); });
-  document.getElementById('test-err').addEventListener('click', function () { playError(); });
+  document.getElementById('test-err').addEventListener('click', function () { playError(3); });
   document.getElementById('test-scan').addEventListener('click', function () {
     handleScan('2000000277523', 'тест');
   });
