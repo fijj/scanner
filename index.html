@@ -446,9 +446,23 @@
   });
 
   /* ---------- удержание фокуса ---------- */
+  /* Кнопки не должны забирать фокус у поля-приёмника. Иначе после тапа
+     срабатывает blur -> focus() уже внутри жеста пользователя, и Android
+     на это открывает экранную клавиатуру. Отменяем фокусировку кнопок:
+     click при этом продолжает работать. */
+  function keepFocus(e) {
+    if (e.target && e.target.tagName === 'BUTTON') e.preventDefault();
+  }
+  document.addEventListener('pointerdown', keepFocus, true);
+  document.addEventListener('mousedown',   keepFocus, true);
+
   function focusInput() {
     if (document.activeElement === scanInput) return;
+    /* readonly-поле получает фокус, но клавиатуру не поднимает;
+       снимаем флаг сразу после — IME-приём символов со сканера сохраняется */
+    scanInput.readOnly = true;
     try { scanInput.focus({ preventScroll: true }); } catch (e) { scanInput.focus(); }
+    setTimeout(function () { scanInput.readOnly = false; }, 60);
   }
 
   scanInput.addEventListener('blur', function () { setTimeout(focusInput, 50); });
@@ -459,8 +473,12 @@
     focusDot.className = ok ? 'on' : '';
   }, 500);
 
-  document.addEventListener('touchstart', function () { setTimeout(focusInput, 30); });
-  document.addEventListener('click',      function () { setTimeout(focusInput, 30); });
+  function refocusIfNotButton(e) {
+    if (e.target && e.target.tagName === 'BUTTON') return;
+    setTimeout(focusInput, 30);
+  }
+  document.addEventListener('touchstart', refocusIfNotButton);
+  document.addEventListener('click',      refocusIfNotButton);
   window.addEventListener('focus',        function () { setTimeout(focusInput, 30); });
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) setTimeout(focusInput, 100);
